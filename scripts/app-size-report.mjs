@@ -237,6 +237,8 @@ const PRESENTATION_RUNTIME_BUDGET_BYTES = {
   linux: 69 * 1024 * 1024,
   // Windows PE builds of the same frozen Open Slide closure: 78,110,553 bytes.
   "win32-x64": 76 * 1024 * 1024,
+  // Unofficial Windows ARM64 build: 73,384,031 bytes on 2026-11-16.
+  "win32-arm64": 72 * 1024 * 1024,
 };
 
 export async function checkAppSizeBudgets(
