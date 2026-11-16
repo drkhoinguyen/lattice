@@ -7,11 +7,16 @@ import { prepareNodeRuntime } from "./lib/node-runtime.mjs";
 import { isMain, projectRoot, readJson, writeJson } from "./lib/util.mjs";
 
 export async function prepareWindowsRuntime() {
-  if (process.platform !== "win32" || process.arch !== "x64") {
-    throw new Error("The experimental Windows package requires Windows x64.");
+  // Tauri sets TAURI_ENV_ARCH for the build hook; fall back to the host's.
+  const arch = process.env.TAURI_ENV_ARCH ?? (process.arch === "arm64" ? "aarch64" : "x86_64");
+  if (process.platform !== "win32" || !["x86_64", "aarch64"].includes(arch)) {
+    throw new Error("The experimental Windows package requires Windows x64 or ARM64.");
   }
   const { nodeVersion } = readJson(join(projectRoot, "scripts/synara-runtime.json"));
-  const target = "x86_64-pc-windows-msvc";
+  const target = `${arch}-pc-windows-msvc`;
+  if (arch === "aarch64" && !/^[0-9a-f]{64}$/.test(process.env.LATTICE_NODE_WIN_ARM64_SHA256 ?? "")) {
+    throw new Error("Set LATTICE_NODE_WIN_ARM64_SHA256 to the SHA-256 of the Node win-arm64 zip.");
+  }
   const destination = join(projectRoot, "src-tauri/synara-runtime");
   const stage = mkdtempSync(join(projectRoot, "src-tauri/.windows-runtime-"));
   const cacheRoot = join(projectRoot, "node_modules/.cache/lattice/node");

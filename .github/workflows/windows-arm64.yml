@@ -1,0 +1,84 @@
+name: Windows ARM64 installer (unofficial)
+
+# Unofficial native ARM64 build for Snapdragon laptops. Run it by hand from the
+# Actions tab; it publishes nothing and only keeps the installer as an artifact.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TARGET: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-pnpm
+
+      - name: Install Rust for ARM64
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+            Invoke-WebRequest https://win.rustup.rs/aarch64 -OutFile "$env:RUNNER_TEMP\rustup-init.exe"
+            & "$env:RUNNER_TEMP\rustup-init.exe" -y --default-toolchain none --profile minimal
+            if ($LASTEXITCODE -ne 0) { throw 'rustup install failed.' }
+            "$env:USERPROFILE\.cargo\bin" >> $env:GITHUB_PATH
+            $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+          }
+          rustup toolchain install
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain install failed.' }
+          rustup target add $env:TARGET
+          if ($LASTEXITCODE -ne 0) { throw 'Target install failed.' }
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: aarch64-pc-windows-msvc-installer
+          cache-on-failure: true
+
+      - name: Look up the Node win-arm64 checksum
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content scripts/synara-runtime.json -Raw | ConvertFrom-Json).nodeVersion
+          $sums = (Invoke-WebRequest "https://nodejs.org/dist/v$version/SHASUMS256.txt").Content
+          $line = ($sums -split "`n") | Where-Object { $_ -match "\s+node-v$version-win-arm64\.zip\s*$" }
+          if (-not $line) { throw 'No win-arm64 checksum found.' }
+          $hash = ($line.Trim() -split '\s+')[0]
+          if ($hash -notmatch '^[0-9a-f]{64}$') { throw 'Bad checksum.' }
+          "LATTICE_NODE_WIN_ARM64_SHA256=$hash" >> $env:GITHUB_ENV
+
+      - name: Build the unsigned per-user ARM64 installer
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          LATTICE_PRIVATE_FONTS_DIR: ""
+          LATTICE_PRIVATE_FONTS_REQUIRED: ""
+        run: pnpm tauri build --target $env:TARGET --bundles nsis --config src-tauri/tauri.windows.conf.json
+
+      - name: Find the installer and write its checksum
+        id: installer
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $found = @(Get-ChildItem "src-tauri/target/$env:TARGET/release/bundle/nsis" -Filter '*-setup.exe' -File)
+          if ($found.Count -ne 1) { throw "Expected one installer, found $($found.Count)." }
+          $hash = (Get-FileHash $found[0].FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($found[0].Name)" | Set-Content "$($found[0].FullName).sha256"
+          "### Unofficial Windows ARM64 installer`n`n$($found[0].Name)`n`nSHA-256: $hash" >> $env:GITHUB_STEP_SUMMARY
+          "dir=$($found[0].DirectoryName)" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lattice-windows-arm64-unofficial
+          path: |
+            ${{ steps.installer.outputs.dir }}/*-setup.exe
+            ${{ steps.installer.outputs.dir }}/*-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 30

@@ -32,6 +32,13 @@ export const NODE_RELEASES = {
     archive: "node-v24.20.0-win-x64.zip",
     sha256: "6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba",
   },
+  // Unofficial Windows ARM64 build: the checksum comes from nodejs.org's
+  // SHASUMS256.txt at build time (see .github/workflows/windows-arm64.yml).
+  "aarch64-pc-windows-msvc": {
+    platform: "win32-arm64",
+    archive: "node-v24.20.0-win-arm64.zip",
+    sha256: process.env.LATTICE_NODE_WIN_ARM64_SHA256 ?? "",
+  },
 };
 
 export function nodeRelease(target, version) {
